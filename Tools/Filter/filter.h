@@ -1,118 +1,225 @@
 /**
   ******************************************************************************
   * @file           : filter.h
-  * @brief          : 滤波器函数功能文件. 包括陷波滤波器, 低通滤波器, 高通滤波器, 带通滤波器.
+  * @brief          : 滤波器函数功能文件
   * @attention      : None
 
   ******************************************************************************
   */
 
 
-#ifndef __FILTER_H
-#define __FILTER_H
+// filter.h
+#ifndef FILTER_H
+#define FILTER_H
 
-#include "main.h"
-#include "math.h"
-#include <stdlib.h>
-#include "usart.h"
+#include <math.h>
 
-/**
-  * @brief  是否使用MATLAB
-  * @param  1: 使用
-  * @param  0: 不使用
-  */
-#define MATLAB					1
+// 滤波器类型枚举变量
+typedef enum {
+    NOTCH=1,      // 陷波滤波器
+    LOWPASS,   // 低通滤波器
+    HIGHPASS,  // 高通滤波器
+    BANDPASS,  // 带通滤波器
+    BANDSTOP   // 带阻滤波器
+} FilterClassType;
 
-
-#define F_PI					3.141593		// 圆周率
-#define FILTER_Q				0.707           // 滤波品质因数
-
-
-extern float sample_freq;                       // 采样频率 (Hz)
-extern float notch_freq;                        // 陷波滤波器 陷波频率 (Hz)
-extern float lowpass_freq;                      // 低通滤波器 低截止频率 (Hz)
-extern float highpass_freq;                     // 高通滤波器 高截止频率 (Hz)
-
-
-/**
-  * @brief 滤波器输入输出延迟线结构体
-  */
-typedef struct {
-    float x1, x2; // 输入延迟线
-    float y1, y2; // 输出延迟线
-}filter_dl;
+// 滤波器参数结构体
+// a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+typedef struct filter {
+    FilterClassType class;  // 滤波器类型
+    float fs;               // 采样频率
+    float notch_cut;        // 陷波频率
+    float low_cut;          // 低通频率 (带通和带组滤波器时 low_cut 和 high_cut 配合使用)
+    float high_cut;         // 高通频率 (带通和带组滤波器时 low_cut 和 high_cut 配合使用)
+    float q;                // 品质因数Q （Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽）
+    float b[3];             // 滤波器分子系数 numerator
+    float a[3];             // 滤波器分母系数 denominator
+    float x[3];             // 输入信号 x[n], x[n-1], x[n-2]
+    float y[3];             // 输出信号 y[n], y[n-1], y[n-2]
+}FilterTypeDef;
 
 
-extern filter_dl nt_filter;		                // 陷波滤波器结构体
-extern filter_dl lp_filter;		                // 低通滤波器结构体
-extern filter_dl hp_filter;		                // 高通滤波器结构体
+extern FilterTypeDef filter_nt_data1;
 
+void init_filter(FilterTypeDef *filter, FilterClassType class, float fs,  float notch_cut, float low_cut, float high_cut);
+float apply_filter(float input, FilterTypeDef *filter);
 
-extern float nt_a[3];                           // 陷波滤波器分母系数
-extern float nt_b[3];                           // 陷波滤波器分子系数
-
-extern float lp_a[3];                           // 低通滤波器分母系数
-extern float lp_b[3];                           // 低通滤波器分子系数
-
-extern float hp_a[3];                           // 高通滤波器分母系数
-extern float hp_b[3];                           // 高通滤波器分子系数
-
-
-void Filter_Coe_Init(float freq);// 滤波器系数初始化
-void Notch_Filter_Init(float *nt_a, float *nt_b, float freq);// 陷波滤波器系数初始化
-void Lowpass_Filter_Init(float *lp_a, float *lp_b, float freq);// 低通滤波器系数初始化
-void Highpass_Filter_Init(float *hp_a, float *hp_b, float freq);// 高通滤波器系数初始化
-float Notch_Filter(float signal);// 陷波滤波器处理函数
-float Lowpass_Filter(float signal);// 低通滤波器处理函数
-float Highpass_Filter(float signal);// 高通滤波器处理函数
+#endif
 
 
 
-/******************************************************************************************/
-#if MATLAB
+/*
+# python 验证代码(绘制幅频特性和相频特性曲线):
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import freqz
 
-/* 滤波器阶数必须为偶数, 由于位宽限制目前只能使用2阶, 阶数过高会导致数据溢出, 经过测试4阶高通和4阶低通可用. (如果输出满量程或输出0, 则是数据溢出)*/
-#define F_ORDER					2               // 滤波器阶数
+def plot_amplitude_phase(b, a, sample_freq, mark_Hz=None, mark_dB=-3):
+    #  计算幅频响应
+    frequencies = np.linspace(0, sample_freq / 2, 1000)
+    w, h = freqz(b, a, worN=frequencies, fs=sample_freq)
+    amplitude = 20 * np.log10(abs(h))
+    phase = np.angle(h)
+    # 绘制幅频特性
+    plt.figure(figsize=(8, 6))
+    plt.subplot(2, 1, 1)
+    plt.plot(frequencies, amplitude)
+    plt.title("Filter Frequency Response")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Amplitude (dB)")
+    if mark_Hz is not None:
+        # 标记特定频率点
+        mark_Hz  = mark_Hz  # 标记频率值 (Hz)
+        mark_Hz_idx = np.argmin(np.abs(frequencies - mark_Hz))  # 找到最接近目标频率点的位置
+        mark_Hz_freq = frequencies[mark_Hz_idx]  # 获取该频率点对应的频率值
+        mark_Hz_amplitude = 20 * np.log10(abs(h[mark_Hz_idx]))  # 计算幅度
+        plt.plot(mark_Hz, mark_Hz_amplitude, 'go')  # 绘制标记点
+        plt.text(mark_Hz, mark_Hz_amplitude, f"({mark_Hz_freq:.2f} Hz, {mark_Hz_amplitude:.2f} dB)", color='red')  # 添加文本
+    if mark_dB is not None:
+        # 标记特定幅度点
+        mark_dB = mark_dB  # 标记幅度值 (dB)
+        mark_dB_idx = np.argmin(np.abs(amplitude - mark_dB))  # 找到最接近目标幅度点的位置
+        mark_dB_freq = frequencies[mark_dB_idx]  # 获取该幅度点对应的频率值
+        mark_dB_amplitude = 20 * np.log10(abs(h[mark_dB_idx]))  # 计算幅度
+        plt.plot(mark_dB_freq, mark_dB_amplitude, 'ro')  # 绘制标记点
+        plt.text(mark_dB_freq, mark_dB_amplitude, f"({mark_dB_freq:.2f} Hz, {mark_dB_amplitude:.2f} dB)", color='red')  # 添加文本
+    # 绘制相频特性
+    plt.subplot(2, 1, 2)
+    plt.plot(frequencies, phase)
+    plt.title("Filter Phase Response")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Phase (radians)")
+    # 绘图
+    plt.tight_layout()
+    plt.show()
+
+def notch_filter_coefficients(notch_freq, sample_freq, Q=30):
+    """
+    计算陷波滤波器系数
+    时域关系: a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+    Args:
+        notch_freq (float): 滤波器的中心频率 (Hz)
+        sample_freq (float): 采样频率 (Hz)
+        Q (float): 品质因数, 决定带宽 (Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽)
+    Returns:
+        b (numpy.ndarray): 滤波器分子系数 NUM
+        a (numpy.ndarray): 滤波器分母系数 DEN
+    """
+    w0 = 2.0 * np.pi * notch_freq / sample_freq  # 计算归一化角频率
+    alpha = np.sin(w0) / (2.0 * Q)  # 计算滤波器的 alpha 参数
+    b = [1.0, -2.0 * np.cos(w0), 1.0]  # 分子系数
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]  # 分母系数
+    a0 = a[0]
+    b = np.array(b) / a0
+    a = np.array(a) / a0
+    return np.array(b), np.array(a)
 
 
-/* MATLAB IIR滤波采样频率, 可选250Hz, 500Hz, 1000Hz, 2000Hz. (如果想使用其它采样频率, 需自己重新生产系数) */
-#define MATLAB_FS		        500            // 滤波器采样频率
+def lowpass_filter_coefficients(cut_freq, sample_freq, Q=0.707):
+    """
+    计算低通滤波器系数
+    时域关系: a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+    Args:
+        cut_freq (float): 截止频率 (Hz)
+        sample_freq (float): 采样频率 (Hz)
+        Q (float): 品质因数, 决定带宽 (Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽)
+    Returns:
+        b (numpy.ndarray): 滤波器分子系数 NUM
+        a (numpy.ndarray): 滤波器分母系数 DEN
+    """
+    w0 = 2.0 * np.pi * cut_freq / sample_freq  # 计算归一化角频率
+    alpha = np.sin(w0) / (2.0 * Q)  # 计算滤波器的 alpha 参数
+    b = [(1.0 - np.cos(w0)) / 2.0, 1 - np.cos(w0), (1.0 - np.cos(w0)) / 2.0]  # 分子系数
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]  # 分母系数
+    a0 = a[0]
+    b = np.array(b) / a0
+    a = np.array(a) / a0
+    return np.array(b), np.array(a)
 
 
-extern float lp_den[F_ORDER+1];                 // 低通滤波器分母系数
-extern float lp_num[F_ORDER+1];                 // 低通滤波器分子系数
-extern float lp_xn[F_ORDER+1];                  // 低通滤波器输入数组
-extern float lp_yn[F_ORDER+1];                  // 低通滤波器输出数组
-
-extern float hp_den[F_ORDER+1];                 // 高通滤波器分母系数
-extern float hp_num[F_ORDER+1];                 // 高通滤波器分子系数
-extern float hp_xn[F_ORDER+1];                  // 高通滤波器输入数组
-extern float hp_yn[F_ORDER+1];                  // 高通滤波器输出数组
-
-extern float bp_den[F_ORDER+1];                 // 带通滤波器分母系数
-extern float bp_num[F_ORDER+1];                 // 带通滤波器分子系数
-extern float bp_xn[F_ORDER+1];                  // 带通滤波器输入数组
-extern float bp_yn[F_ORDER+1];                  // 带通滤波器输出数组
-
-extern float bs_den[F_ORDER+1];                 // 带阻滤波器分母系数
-extern float bs_num[F_ORDER+1];                 // 带阻滤波器分子系数
-extern float bs_xn[F_ORDER+1];                  // 带阻滤波器输入数组
-extern float bs_yn[F_ORDER+1];                  // 带阻滤波器输出数组
-
-
-#define LP_FILTER               0               //低通滤波器
-#define HP_FILTER               1               //高通滤波器
-#define BP_FILTER               2               //带通滤波器
-#define BS_FILTER               3               //带阻滤波器
+def highpass_filter_coefficients(cut_freq, sample_freq, Q=0.707):
+    """
+    计算高通滤波器系数
+    时域关系: a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+    Args:
+        cut_freq (float): 截止频率 (Hz)
+        sample_freq (float): 采样频率 (Hz)
+        Q (float): 品质因数, 决定带宽 (Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽)
+    Returns:
+        b (numpy.ndarray): 滤波器分子系数 NUM
+        a (numpy.ndarray): 滤波器分母系数 DEN
+    """
+    w0 = 2.0 * np.pi * cut_freq / sample_freq  # 计算归一化角频率
+    alpha = np.sin(w0) / (2.0 * Q)  # 计算滤波器的 alpha 参数
+    b = [(1.0 + np.cos(w0)) / 2.0, -1.0 - np.cos(w0), (1.0 + np.cos(w0)) / 2.0]  # 分子系数
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]  # 分母系数
+    a0 = a[0]
+    b = np.array(b) / a0
+    a = np.array(a) / a0
+    return np.array(b), np.array(a)
 
 
-float MATLAB_Fliter(uint8_t type, float xn);// MATLAB滤波函数
-float MATLAB_IIR_Model(float *Num, float *Den, float *xnReg, float *ynReg, float xn);// IIR滤波器功能模块函数
-void MATLAB_IIR_Coe_Init(void);// MATLAB系数初始化函数
+def bandpass_filter_coefficients(low_cut, high_cut, sample_freq):
+    """
+    计算带通滤波器系数 (效果不太理想)
+    时域关系: a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+    Args:
+        cut_freq (float): 截止频率 (Hz)
+        sample_freq (float): 采样频率 (Hz)
+    Returns:
+        b (numpy.ndarray): 滤波器分子系数 NUM
+        a (numpy.ndarray): 滤波器分母系数 DEN
+    """
+    center_freq = np.sqrt(low_cut * high_cut)  # 计算中心频率
+    bandwith = high_cut - low_cut  # 计算带宽
+    Q = center_freq / bandwith  # 计算品质因数 决定带宽 (Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽)
+    w0 = 2.0 * np.pi * center_freq / sample_freq  # 计算归一化角频率
+    alpha = np.sin(w0) / (2.0 * Q)  # 计算滤波器的 alpha 参数
+    b = [alpha, 0.0, -alpha]  # 分子系数
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]  # 分母系数
+    a0 = a[0]
+    b = np.array(b) / a0
+    a = np.array(a) / a0
+    return np.array(b), np.array(a)
 
 
-#endif /* MATLAB */
+def bandstop_filter_coefficients(low_cut, high_cut, sample_freq):
+    """
+    计算带通滤波器系数 (效果不太理想)
+    时域关系: a[0] * y[n] = b[0] * x[n] + b[1] * x[n-1]  + b[2] * x[n-2] - a[1] * y[n-1] - a[2] * y[n-2]
+    Args:
+        cut_freq (float): 截止频率 (Hz)
+        sample_freq (float): 采样频率 (Hz)
+    Returns:
+        b (numpy.ndarray): 滤波器分子系数 NUM
+        a (numpy.ndarray): 滤波器分母系数 DEN
+    """
+    center_freq = np.sqrt(low_cut * high_cut)  # 计算中心频率
+    bandwith = high_cut - low_cut  # 计算带宽
+    Q = center_freq / bandwith  # 计算品质因数 决定带宽 (Q = center_freq / bandwith, center_freq: 中心频率; bandwith: 带宽)
+    w0 = 2.0 * np.pi * center_freq / sample_freq  # 计算归一化角频率
+    alpha = np.sin(w0) / (2.0 * Q)  # 计算滤波器的 alpha 参数
+    b = [1.0, -2.0 * np.cos(w0), 1.0]  # 分子系数
+    a = [1.0 + alpha, -2.0 * np.cos(w0), 1.0 - alpha]  # 分母系数
+    a0 = a[0]
+    b = np.array(b) / a0
+    a = np.array(a) / a0
+    return np.array(b), np.array(a)
 
 
+freq =100
+sample_freq = 2000
+b, a = notch_filter_coefficients(freq, sample_freq)
+# b, a = lowpass_filter_coefficients(freq, sample_freq)
+# b, a = highpass_filter_coefficients(freq, sample_freq)
+# b, a = bandpass_filter_coefficients(10, 100, sample_freq)
+# b, a = bandstop_filter_coefficients(10, 100, sample_freq)
 
-#endif /* __FILTER_H */
+mark_Hz = freq
+mark_dB = -3
+print(b)
+print(a)
+plot_amplitude_phase(b, a, sample_freq, mark_Hz, mark_dB)
+
+
+*/
