@@ -2,15 +2,17 @@
   ******************************************************************************
   * @file           : filter.c
   * @brief          : 滤波器函数功能文件. 包括陷波滤波器, 低通滤波器, 高通滤波器, 带通滤波器.
-                      滤波器分子系数: Num 或者 b
-                      滤波器分母系数: Den 或者 a
-                      IIR 滤波器结构:
+                      滤波器分子系数: b (numerator)
+                      滤波器分母系数: a (denominator)
+                      滤波器结构:
                       a(1)*y(n) = b(1)*x(n) + b(2)*x(n-1) + ... + b(order)*x(n-order)- a(2)*y(n-1) - ... - a(order)*y(n-order)
-                      IIR 滤波器实现:
-                      a[0]*y[0] = b[0]*x[0] + b[1]*x[1] + ... + b[order]*x[order] - a[1]*y[1] - ... - a[order]*y[order]
+                      滤波器实现 (a[0] = 1):
+                      y[0] = b[0]*x[0] + b[1]*x[1] + ... + b[n-order]*x[n-order] - a[1]*y[1] - ... - a[n-order]*y[n-order]
   * @attention      :
                       主程序使用示例 (仅做参考):
-
+						
+						FilterTypeDef filter_nt_data1; // 定义滤波器结构体
+						
                         int main(void) {
 
                             int32_t xn, yn; // 输入输出信号
